@@ -21,7 +21,20 @@
     </ul>
   </li>
   <li><strong>"scien" books:</strong> {{ scien_books_count }}</li>
+
+  <li><strong>Total adaptations:</strong> {{ total_adaptations }}</li>
+  <li><strong>Adaptations by media type:</strong>
+    <ul>
+      {% for adaptation in adaptation_counts %}
+        <li><strong>{{ adaptation.media_type }}</strong>: {{ adaptation.count }}</li>
+      {% endfor %}
+    </ul>
+  </li>
+
+  <li><strong>Book with most adaptations:</strong> {{ book_with_most_adaptations }}</li>
+
 </ul>
+
 <p>
   You have visited this page {{ num_visits }} time{{ num_visits|pluralize }}.
 </p>

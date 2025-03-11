@@ -2,7 +2,7 @@ from django.contrib import admin
 
 # Register your models here.
 
-from .models import Author, Genre, Book, BookInstance, Language
+from .models import Author, Genre, Book, BookInstance, Language, Adaptation
 
 # admin.site.register(Author)
 # admin.site.register(Book)
@@ -51,3 +51,20 @@ class BookInstanceAdmin(admin.ModelAdmin):
         (None, {"fields": ("book", "imprint", "id")}),
         ("Availability", {"fields": ("status", "due_back", "borrower")}),
     )
+
+@admin.register(Adaptation)
+class AdaptationAdmin(admin.ModelAdmin):
+    list_display = ("title", "media_type", "release_date", "book_display", "creator_display")
+    search_fields = ("title",)
+    list_filter = ("media_type", "release_date")
+    filter_horizontal = ("creator",)
+
+    def book_display(self, obj):
+        """Display the related book title."""
+        return obj.book.title
+    book_display.short_description = "Book"
+
+    def creator_display(self, obj):
+        """Display creators as a comma-separated list."""
+        return ", ".join(author.__str__() for author in obj.creator.all())
+    creator_display.short_description = "Creators"

@@ -1,0 +1,9 @@
+{% extends "base_generic.html" %}
+
+{% block content %}
+  <h1>{{ adaptation.title }}</h1>
+  <p><strong>Media Type:</strong> {{ adaptation.media_type }}</p>
+  <p><strong>Release Date:</strong> {{ adaptation.release_date }}</p>
+  <p><strong>Based on Book:</strong> <a href="{% url 'book-detail' adaptation.book.id %}">{{ adaptation.book.title }}</a></p>
+  <a href="{% url 'adaptations' %}">Back to Adaptations</a>
+{% endblock %}

@@ -171,3 +171,23 @@ class Author(models.Model):
     def __str__(self):
         """String for representing the Model object."""
         return f"{self.last_name}, {self.first_name}"
+
+class Adaptation(models.Model):
+    """Model representing an adaptation of a book into another media type (e.g., movie, TV series, board game)."""
+
+    MEDIA_TYPE_CHOICES = [
+        ("m", "Movie"),
+        ("t", "TV Series"),
+        ("b", "Board Game"),
+    ]
+
+    title = models.CharField(max_length=200)
+    media_type = models.CharField(max_length=1, choices=MEDIA_TYPE_CHOICES)
+    release_date = models.DateField()
+    book = models.ForeignKey(Book, on_delete=models.CASCADE)
+    creator = models.ManyToManyField(Author, help_text="Select the creator(s) of this adaptation")
+
+    def __str__(self):
+        """String representation of the adaptation."""
+        return self.title
+        

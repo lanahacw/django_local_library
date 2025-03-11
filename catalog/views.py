@@ -1,40 +1,54 @@
 from django.shortcuts import render
 from django.db.models import Q
+from django.db.models import Count
 
 # Create your views here.
-from .models import Book, Author, BookInstance, Genre
+from .models import Book, Author, BookInstance, Genre, Adaptation
 
 
 def index(request):
     """View function for home page of site."""
-
+    
     # Generate counts of some of the main objects
     num_books = Book.objects.all().count()
     num_instances = BookInstance.objects.all().count()
-
-    # Available books (status = 'a')
     num_instances_available = BookInstance.objects.filter(status__exact="a").count()
-
-    # The 'all()' is implied by default.
     num_authors = Author.objects.count()
-
+    
     # Number of visits to this view, as counted in the session variable.
     num_visits = request.session.get("num_visits", 0)
     num_visits += 1
     request.session["num_visits"] = num_visits
-
+    
     genre_counts = {
         "children": Genre.objects.filter(name__icontains="children").count(),
         "fiction": Genre.objects.filter(name__icontains="fiction").count(),
         "science": Genre.objects.filter(name__icontains="science").count(),
     }
-
-    # chained filters are "AND"ed together, resulting in the "intersection" or "conjunction", but I wanted
-    # the "OR"ed result (or "disjunction" or "union") so I used the Q object (note the added import above)
-    # https://docs.djangoproject.com/en/5.0/topics/db/queries/#complex-lookups-with-q-objects
+    
     scien_books_count = Book.objects.filter(
         Q(title__icontains="scien") | Q(summary__icontains="scien")
     ).count()
+
+    # Fetch total adaptations and adaptation counts by media type
+    total_adaptations = Adaptation.objects.count()
+
+    # Adaptation counts by media type
+    adaptation_counts = Adaptation.objects.values('media_type').annotate(count=Count('id'))
+
+    # Book with the most adaptations
+    book_with_most_adaptations = (
+        Adaptation.objects
+        .values('book__title')
+        .annotate(adaptation_count=Count('id'))
+        .order_by('-adaptation_count')
+        .first()
+    )
+
+    # Provide default value if no adaptation data exists
+    book_with_most_adaptations_title = (
+        book_with_most_adaptations["book__title"] if book_with_most_adaptations else "No adaptations available"
+    )
 
     context = {
         "num_books": num_books,
@@ -44,9 +58,11 @@ def index(request):
         "genre_counts": genre_counts,
         "scien_books_count": scien_books_count,
         "num_visits": num_visits,
+        "total_adaptations": total_adaptations,
+        "adaptation_counts": adaptation_counts,
+        "book_with_most_adaptations": book_with_most_adaptations_title,
     }
 
-    # Render the HTML template index.html with the data in the context variable
     return render(request, "index.html", context=context)
 
 
@@ -231,3 +247,15 @@ class BookDelete(PermissionRequiredMixin, DeleteView):
             return HttpResponseRedirect(
                 reverse("book-delete", kwargs={"pk": self.object.pk})
             )
+
+class AdaptationListView(generic.ListView):
+    """View to list all adaptations."""
+    model = Adaptation
+    template_name = "catalog/adaptation_list.html"
+    paginate_by = 10
+
+
+class AdaptationDetailView(generic.DetailView):
+    """View to show details of a single adaptation."""
+    model = Adaptation
+    template_name = "catalog/adaptation_detail.html"
