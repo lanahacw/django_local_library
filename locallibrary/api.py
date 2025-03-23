@@ -1,13 +1,26 @@
 from ninja import NinjaAPI, Schema
-from django.shortcuts import get_object_or_404
-from catalog.models import Author, Genre, Language
+from typing import List, Optional
+from django.contrib.auth.decorators import login_required
+from ninja.security import HttpBearer
+from catalog.models import Author, Genre, Language, Book, BookInstance
 from datetime import date
+from pydantic import BaseModel
+from uuid import UUID
+from typing import Optional
+from rest_framework.authtoken.models import Token
+from django.shortcuts import get_object_or_404
+
+class GlobalAuth(HttpBearer):
+    def authenticate(self, request, token):
+        from django.contrib.auth.models import User
+        try:
+            return User.objects.get(auth_token=token)
+        except User.DoesNotExist:
+            return None
 
 api = NinjaAPI()
 
-# ================================
 # Author Schemas and Endpoints
-# ================================
 
 class AuthorSchema(Schema):
     id: int
@@ -56,9 +69,7 @@ def delete_author(request, author_id: int):
     return {"success": True}
 
 
-# ================================
 # Genre Schemas and Endpoints
-# ================================
 
 class GenreSchema(Schema):
     id: int
@@ -100,9 +111,7 @@ def delete_genre(request, genre_id: int):
     return {"success": True}
 
 
-# ================================
 # Language Schemas and Endpoints
-# ================================
 
 class LanguageSchema(Schema):
     id: int
@@ -141,4 +150,159 @@ def update_language(request, language_id: int, data: LanguageCreateSchema):
 def delete_language(request, language_id: int):
     language = get_object_or_404(Language, id=language_id)
     language.delete()
+    return {"success": True}
+
+# Book Schemas and Endpoints
+
+class BookSchema(Schema):
+    id: int
+    title: str
+    summary: str
+    isbn: str
+    language_id: Optional[int]  
+    author_id: Optional[int]   
+    genre_ids: List[int]  
+
+    @staticmethod
+    def from_orm(book: Book) -> "BookSchema":
+        return BookSchema(
+            id=book.id,
+            title=book.title,
+            summary=book.summary,
+            isbn=book.isbn,
+            language_id=book.language.id if book.language else None,  
+            author_id=book.author.id if book.author else None,        
+            genre_ids=[genre.id for genre in book.genre.all()]    
+        )
+
+class BookCreateSchema(Schema):
+    title: str
+    summary: str
+    isbn: str
+    language_id: Optional[int]
+    author_id: Optional[int]
+    genre_ids: List[int]
+
+class BookInstanceSchema(BaseModel):
+    id: UUID 
+    book_id: int
+    imprint: str
+    due_back: Optional[date]
+    status: str
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+    
+
+#Create Book
+@api.post("/books/", response=BookSchema, auth=GlobalAuth())
+def create_book(request, data: BookCreateSchema):
+    author = Author.objects.get(id=data.author_id) if data.author_id else None
+    language = Language.objects.get(id=data.language_id) if data.language_id else None
+    book = Book.objects.create(
+        title=data.title,
+        summary=data.summary,
+        isbn=data.isbn,
+        author=author,
+        language=language,
+    )
+    book.genre.set(Genre.objects.filter(id__in=data.genre_ids))  # Add genres to book
+
+    response_data = BookSchema.from_orm(book)  # Serializes the book including genres
+    response_data.genre_ids = [genre.id for genre in book.genre.all()]  # Add genre_ids explicitly
+    return response_data
+
+
+#Read All Books
+@api.get("/books/", response=List[BookSchema])
+def list_books(request):
+    books = Book.objects.all()
+    response_data = []
+    for book in books:
+        book_data = BookSchema.from_orm(book)  # Serializes the book including genres
+        book_data.genre_ids = [genre.id for genre in book.genre.all()]  # Add genre_ids explicitly
+        response_data.append(book_data)
+
+    return response_data
+
+#Read One Book
+@api.get("/books/{book_id}", response=BookSchema)
+def get_book(request, book_id: int):
+    book = get_object_or_404(Book, id=book_id)
+    
+    response_data = BookSchema.from_orm(book)  # Serializes the book including genres
+    response_data.genre_ids = [genre.id for genre in book.genre.all()]  # Add genre_ids explicitly
+    return response_data
+
+
+#Update Book
+@api.put("/books/{book_id}", response=BookSchema, auth=GlobalAuth())
+def update_book(request, book_id: int, data: BookCreateSchema):
+    book = get_object_or_404(Book, id=book_id)
+    book.title = data.title
+    book.summary = data.summary
+    book.isbn = data.isbn
+
+    if data.language_id:
+        book.language = get_object_or_404(Language, id=data.language_id)
+    if data.author_id:
+        book.author = get_object_or_404(Author, id=data.author_id)
+    book.genre.set(Genre.objects.filter(id__in=data.genre_ids))
+    book.save()
+    response_data = BookSchema.from_orm(book)
+    response_data.genre_ids = [genre.id for genre in book.genre.all()]
+    return response_data
+
+#Delete Book
+@api.delete("/books/{book_id}", auth=GlobalAuth())
+def delete_book(request, book_id: int):
+    book = Book.objects.get(id=book_id)
+    book.delete()
+    return {"success": True}
+
+#Create BookInstance
+@api.post("/bookinstances/", response=BookInstanceSchema, auth=GlobalAuth())
+def create_bookinstance(request, data: BookInstanceSchema):
+    book = Book.objects.get(id=data.book_id)
+    book_instance = BookInstance.objects.create(
+        book=book,
+        imprint=data.imprint,
+        due_back=data.due_back,
+        status=data.status,
+    )
+    return BookInstanceSchema.from_orm(book_instance)
+
+#Read All BookInstances
+@api.get("/bookinstances/", response=List[BookInstanceSchema])
+def list_bookinstances(request):
+    book_instances = BookInstance.objects.all()
+    response_data = []
+    for book_instance in book_instances:
+        book_instance_data = BookInstanceSchema.from_orm(book_instance)
+        response_data.append(book_instance_data)
+
+    return response_data
+
+
+#Read One BookInstance
+@api.get("/bookinstances/{bookinstance_id}", response=BookInstanceSchema)
+def get_bookinstance(request, bookinstance_id: str):
+    return BookInstance.objects.get(id=bookinstance_id)
+
+#Update BookInstance
+@api.put("/bookinstances/{bookinstance_id}", response=BookInstanceSchema, auth=GlobalAuth())
+def update_bookinstance(request, bookinstance_id: str, data: BookInstanceSchema):
+    book_instance = BookInstance.objects.get(id=bookinstance_id)
+    book_instance.imprint = data.imprint
+    book_instance.due_back = data.due_back
+    book_instance.status = data.status
+    book_instance.save()
+    return book_instance
+
+#Delete BookInstance
+@api.delete("/bookinstances/{bookinstance_id}", auth=GlobalAuth())
+def delete_bookinstance(request, bookinstance_id: str):
+    book_instance = BookInstance.objects.get(id=bookinstance_id)
+    book_instance.delete()
     return {"success": True}
